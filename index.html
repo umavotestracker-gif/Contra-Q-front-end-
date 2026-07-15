@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>ContraQ</title>
+<style>
+  :root {
+    --bg: #0b0d10; --panel: #14171c; --border: #262b33; --text: #e8eaed;
+    --muted: #8b93a1; --accent: #5b8cff; --green: #3ecf8e; --amber: #e0a33e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); display: flex; height: 100vh; }
+  .sidebar { width: 300px; border-right: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+  .logo { font-weight: 700; font-size: 15px; }
+  .logo span { color: var(--accent); }
+  .add-row { display: flex; gap: 6px; }
+  input[type=text] { flex: 1; background: #1b1f26; border: 1px solid var(--border); color: var(--text); padding: 9px 10px; border-radius: 6px; font-size: 13px; }
+  button { background: var(--accent); color: #fff; border: none; padding: 9px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .watchlist-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-top: 6px; }
+  .market-item { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; font-size: 13px; }
+  .market-item:hover { border-color: var(--accent); }
+  .market-item.active { border-color: var(--accent); background: #17203a; }
+  .market-item .price { color: var(--muted); font-size: 11px; margin-top: 3px; }
+  .main { flex: 1; padding: 28px 36px; overflow-y: auto; }
+  .placeholder { color: var(--muted); font-size: 14px; margin-top: 60px; text-align: center; }
+  .status-bar { font-size: 12px; color: var(--muted); margin-bottom: 18px; min-height: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
+  .card h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .card p { font-size: 14px; line-height: 1.55; margin: 0; }
+  .verdict { display: inline-block; padding: 4px 10px; border-radius: 5px; font-size: 12px; font-weight: 600; }
+  .verdict.conclude { background: rgba(62,207,142,0.15); color: var(--green); }
+  .verdict.abstain { background: rgba(224,163,62,0.15); color: var(--amber); }
+  .actions { display: flex; gap: 8px; margin-top: 14px; }
+  .disclaimer { font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
+  .mock-tag { font-size: 10px; color: var(--muted); background: #1b1f26; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .config { font-size: 11px; color: var(--muted); }
+  .config input { width: 100%; margin-top: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="logo">CONTRA<span>Q</span></div>
+  <div class="add-row">
+    <input type="text" id="marketInput" placeholder="e.g. Fed decision in July" />
+    <button id="addBtn">Add</button>
+  </div>
+  <div class="watchlist-label">Active watchlist</div>
+  <div id="watchlist"></div>
+  <div style="flex:1"></div>
+  <div class="config">
+    Backend
+    <input type="text" id="backendUrl" value="https://contra-q-env-backend-production.up.railway.app" />
+  </div>
+</div>
+
+<div class="main">
+  <h1>ContraQ</h1>
+  <div class="sub">Helps you trade. Doesn't tell you what to copy.</div>
+  <div id="content">
+    <div class="placeholder">Add a market on the left to pull live data and run the deep dive.</div>
+  </div>
+</div>
+
+<script>
+const watchlistEl = document.getElementById('watchlist');
+const contentEl = document.getElementById('content');
+const addBtn = document.getElementById('addBtn');
+const marketInput = document.getElementById('marketInput');
+const backendUrlEl = document.getElementById('backendUrl');
+
+let watchlist = [];
+let activeIndex = null;
+
+function backend() { return backendUrlEl.value.trim().replace(/\/$/, ''); }
+
+function renderWatchlist() {
+  watchlistEl.innerHTML = '';
+  watchlist.forEach((m, i) => {
+    const div = document.createElement('div');
+    div.className = 'market-item' + (i === activeIndex ? ' active' : '');
+    const priceText = m.card ? `${(m.card.currentSituation || '').slice(0, 40)}...` : (m.status === 'loading' ? 'analyzing…' : 'error');
+    div.innerHTML = `<div>${m.card ? m.card.marketTitle : m.query}</div><div class="price">${priceText}</div>`;
+    div.onclick = () => { activeIndex = i; renderWatchlist(); renderContent(); };
+    watchlistEl.appendChild(div);
+  });
+}
+
+function isMock(text) { return typeof text === 'string' && text.startsWith('[MOCK]'); }
+function mockTag(text) { return isMock(text) ? '<span class="mock-tag">not yet wired to real reasoning</span>' : ''; }
+
+function renderContent() {
+  if (activeIndex === null) {
+    contentEl.innerHTML = `<div class="placeholder">Add a market on the left to pull live data and run the deep dive.</div>`;
+    return;
+  }
+  const m = watchlist[activeIndex];
+  if (m.status === 'loading') {
+    contentEl.innerHTML = `<div class="status-bar">Calling ContraQ backend, pulling live data and running the deep dive…</div>`;
+    return;
+  }
+  if (m.status === 'error') {
+    contentEl.innerHTML = `<div class="card"><h3>Error</h3><p>${(m.error || '').replace(/</g,'&lt;')}</p></div>`;
+    return;
+  }
+  const c = m.card;
+  contentEl.innerHTML = `
+    <div class="status-bar">${c.marketTitle} · ${c.marketSlug}</div>
+    <div class="card"><h3>Current situation</h3><p>${c.currentSituation}${mockTag(c.currentSituation)}</p></div>
+    <div class="card"><h3>What changed</h3><p>${c.whatChanged}${mockTag(c.whatChanged)}</p></div>
+    <div class="card"><h3>What comes next</h3><p>${c.whatComesNext}${mockTag(c.whatComesNext)}</p></div>
+    <div class="card"><h3>Risks</h3><p>${c.risks}${mockTag(c.risks)}</p></div>
+    <div class="card"><h3>Liquidity / practicality</h3><p>${c.liquidityPractical}${mockTag(c.liquidityPractical)}</p></div>
+    <div class="card">
+      <h3>Verdict</h3>
+      <span class="verdict ${c.verdict.abstain ? 'abstain' : 'conclude'}">${c.verdict.abstain ? 'ABSTAINING — too noisy' : 'READING GIVEN'} · confidence: ${c.verdict.confidence}</span>
+      <p style="margin-top:10px">${c.verdict.reasoning}${mockTag(c.verdict.reasoning)}</p>
+      <div class="actions">
+        <button class="ghost" data-action="recheck">Re-check noise</button>
+        <button class="ghost" data-action="resource_check">Re-check sources</button>
+      </div>
+      <div class="disclaimer">This is a research/reasoning tool, not trade advice or a signal to copy. You decide.</div>
+    </div>
+  `;
+  contentEl.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => runVerify(activeIndex, btn.dataset.action));
+  });
+}
+
+async function runAnalysis(index) {
+  const m = watchlist[index];
+  try {
+    const res = await fetch(backend() + '/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: m.query })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    watchlist[index].status = 'done';
+    watchlist[index].card = data;
+  } catch (e) {
+    watchlist[index].status = 'error';
+    watchlist[index].error = e.message;
+  }
+  renderWatchlist();
+  if (activeIndex === index) renderContent();
+}
+
+async function runVerify(index, mode) {
+  const m = watchlist[index];
+  if (!m.card) return;
+  const prevStatus = m.status;
+  watchlist[index].status = 'loading';
+  renderContent();
+  try {
+    const res = await fetch(backend() + '/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ marketSlug: m.card.marketSlug, mode })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    watchlist[index].card = data.card;
+    watchlist[index].status = 'done';
+  } catch (e) {
+    watchlist[index].status = 'error';
+    watchlist[index].error = e.message;
+  }
+  renderWatchlist();
+  if (activeIndex === index) renderContent();
+}
+
+addBtn.addEventListener('click', () => {
+  const query = marketInput.value.trim();
+  if (!query) return;
+  watchlist.push({ query, status: 'loading' });
+  activeIndex = watchlist.length - 1;
+  marketInput.value = '';
+  renderWatchlist();
+  renderContent();
+  runAnalysis(watchlist.length - 1);
+});
+
+marketInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addBtn.click(); });
+</script>
+
+</body>
+</html>
