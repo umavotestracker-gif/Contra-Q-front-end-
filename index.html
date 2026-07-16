@@ -125,6 +125,13 @@ function renderContent() {
       </div>
       <div class="disclaimer">This is a research/reasoning tool, not trade advice or a signal to copy. You decide.</div>
     </div>
+    ${c.openQuestions && c.openQuestions.length ? `
+    <div class="card">
+      <h3>Still worth researching</h3>
+      <ul style="margin:0; padding-left:18px; font-size:14px; line-height:1.6;">
+        ${c.openQuestions.map(q => `<li>${q}</li>`).join('')}
+      </ul>
+    </div>` : ''}
   `;
   contentEl.querySelectorAll('[data-action]').forEach(btn => {
     btn.addEventListener('click', () => runVerify(activeIndex, btn.dataset.action));
